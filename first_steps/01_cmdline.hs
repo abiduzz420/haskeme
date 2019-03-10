@@ -3,6 +3,5 @@ import System.Environment
 
 main :: IO()
 main = do
-    args <- getArgs
-    putStrLn ("The sum is " ++ show (read (args !! 0) + read (args !! 1)))
-    putStrLn ("The product is " ++ show (read (args !! 0) * read (args !! 1)))
+    name <- getLine
+    putStrLn $ "My name is " ++ name
