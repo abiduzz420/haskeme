@@ -45,6 +45,8 @@ parseNumber = liftM (Number . read) $ many1 digit
 	 
    liftM :: Monad m => (a1 -> r) -> m a1 -> m r
 -}
+
+
 spaces :: Parser ()
 spaces = skipMany1 space
 
@@ -61,10 +63,24 @@ readExpr input =
     Right val -> "Found value"
 
 {-
-    TODO #2 about >> (bind) operator
+		TODO #2 answer about >> (bind) operator
+			`case parse (spaces >> symbol) "lisp" input of`
     It was used before behind the scenes to combine the lines of a do-block. Here, we use it explicitly to combine our whitespace and symbol parsers. However, bind has completely different semantics in the Parser and IO monads. In the Parser monad, bind means "Attempt to match the first parser, then attempt to match the second with the remaining input, and fail if either fails." In general, bind will have wildly different effects in different monads; it's intended as a general way to structure computations, and so needs to be general enough to accommodate all the different types of computations.
 -}
 main :: IO ()
 main = do
   (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
   putStrLn (readExpr expr)
+
+
+-- home work exercises 2.1
+
+-- parseNumber with >>=
+parseNumber' :: Parser LispVal
+parseNumber' = many1 digit >>= return . Number . read
+-- parseNumber with do-notation
+parseNumber'' :: Parser LispVal
+parseNumber'' =
+	do
+		parseStr <- many1 digit
+		return . Number . read $ parseStr
