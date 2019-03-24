@@ -10,13 +10,15 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
+  deriving (Show)
 
+-- parseString is a parser action
 parseString :: Parser LispVal
 parseString = do
   char '"'
   x <- many (noneOf "\"")
   char '"'
-  return $ String x -- String constructor from LispVal. Return injects LispVal into Parser monad
+  return $ String x -- String constructor from LispVal. return injects LispVal into Parser monad
 
 {-
     We're back to using the do-notation instead of the >> operator. This is because we'll be retrieving the value of our parse (returned by many(noneOf "\"")) and manipulating it, interleaving some other parse operations in the meantime. In general, use >> if the actions don't return a value, >>= if you'll be immediately passing that value into the next action, and do-notation otherwise.
@@ -45,7 +47,20 @@ parseNumber = liftM (Number . read) $ many1 digit
 	 
    liftM :: Monad m => (a1 -> r) -> m a1 -> m r
 -}
+parseList :: Parser LispVal
+parseList = liftM List $ sepBy parseExpr spaces
 
+parseDottedList :: Parser LispVal
+parseDottedList = do
+  head <- endBy parseExpr spaces
+  tail <- char '.' >> spaces >> parseExpr
+  return $ DottedList head tail
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+  char '\''
+  x <- parseExpr
+  return $ List [Atom "quote", x]
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -54,7 +69,12 @@ symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 parseExpr :: Parser LispVal
-parseExpr = parseAtom <|> parseString <|> parseNumber
+parseExpr =
+  parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
+    char '('
+    x <- try parseList <|> parseDottedList
+    char ')'
+    return x
 
 readExpr :: String -> String
 readExpr input =
@@ -72,15 +92,13 @@ main = do
   (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
   putStrLn (readExpr expr)
 
-
 -- home work exercises 2.1
-
 -- parseNumber with >>=
 parseNumber' :: Parser LispVal
 parseNumber' = many1 digit >>= return . Number . read
+
 -- parseNumber with do-notation
 parseNumber'' :: Parser LispVal
-parseNumber'' =
-	do
-		parseStr <- many1 digit
-		return . Number . read $ parseStr
+parseNumber'' = do
+  parseStr <- many1 digit
+  return . Number . read $ parseStr
