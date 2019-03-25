@@ -10,7 +10,6 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
-  deriving (Show)
 
 -- parseString is a parser action
 parseString :: Parser LispVal
@@ -80,13 +79,28 @@ readExpr :: String -> String
 readExpr input =
   case parse parseExpr "lisp" input of
     Left err -> "No match: " ++ show err
-    Right val -> "Found value"
+    Right val -> "Found value " ++ show val
+
+instance Show LispVal where show = showVal
+
+showVal :: LispVal -> String
+showVal (Atom name) = name
+showVal (Number number) = show number
+showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (Bool True) = "#t"
+showVal (Bool False) = "#f"
+showVal (List contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
+
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
 
 {-
 		TODO #2 answer about >> (bind) operator
 			`case parse (spaces >> symbol) "lisp" input of`
     It was used before behind the scenes to combine the lines of a do-block. Here, we use it explicitly to combine our whitespace and symbol parsers. However, bind has completely different semantics in the Parser and IO monads. In the Parser monad, bind means "Attempt to match the first parser, then attempt to match the second with the remaining input, and fail if either fails." In general, bind will have wildly different effects in different monads; it's intended as a general way to structure computations, and so needs to be general enough to accommodate all the different types of computations.
 -}
+
 main :: IO ()
 main = do
   (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
