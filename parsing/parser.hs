@@ -2,6 +2,8 @@ import Control.Monad
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
 
+instance Show LispVal where show = showVal
+
 data LispVal
   = Atom String
   | List [LispVal]
@@ -55,6 +57,7 @@ parseDottedList = do
   tail <- char '.' >> spaces >> parseExpr
   return $ DottedList head tail
 
+-- identifies '(foo bar)
 parseQuoted :: Parser LispVal
 parseQuoted = do
   char '\''
@@ -75,14 +78,48 @@ parseExpr =
     char ')'
     return x
 
-readExpr :: String -> String
+-- reading the input string
+readExpr :: String -> LispVal
 readExpr input =
   case parse parseExpr "lisp" input of
-    Left err -> "No match: " ++ show err
-    Right val -> "Found value " ++ show val
+    Left err -> String $ "No match: " ++ show err
+    Right val -> val
+{-
+The notation val@(String _) matches against any LispVal that's a string and then binds val to the whole LispVal, and not just the contents of the String constructor. The result has type LispVal instead of type String.
+-}
+eval :: LispVal -> LispVal
+eval val@(String _) = val
+eval val@(Number _) = val
+eval val@(Bool _) = val
+eval (List (Atom func : args)) = apply func $ map eval args
 
-instance Show LispVal where show = showVal
+apply :: String -> [LispVal] -> LispVal
+apply func args = maybe (Bool False) ($ args) $ lookup func primitives
 
+-- k-v to map scheme functions to haskell arithmetic operations
+primitives :: [(String, [LispVal] -> LispVal)]
+primitives = [
+  ("+", numericBinop (+)),
+  ("-", numericBinop (-)),
+  ("*", numericBinop (*)),
+  ("/", numericBinop div),
+  ("mod", numericBinop mod),
+  ("remainder", numericBinop rem),
+  ("quotient", numericBinop quot)]
+
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
+numericBinop op args = Number $ foldl1 op $ map unpackNum args
+
+unpackNum :: LispVal -> Integer
+unpackNum (Number n) = n
+unpackNum (String n) = let parsed = reads n :: [(Integer, String)] in
+                           if null parsed
+                            then 0
+                            else fst $ parsed !! 0 
+unpackNum (List [n]) = unpackNum n
+unpackNum _ = 0
+
+-- LispVal printer
 showVal :: LispVal -> String
 showVal (Atom name) = name
 showVal (Number number) = show number
@@ -92,6 +129,7 @@ showVal (Bool False) = "#f"
 showVal (List contents) = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
 
+-- make a string out of LispVal list with spaces
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
 
@@ -101,10 +139,9 @@ unwordsList = unwords . map showVal
     It was used before behind the scenes to combine the lines of a do-block. Here, we use it explicitly to combine our whitespace and symbol parsers. However, bind has completely different semantics in the Parser and IO monads. In the Parser monad, bind means "Attempt to match the first parser, then attempt to match the second with the remaining input, and fail if either fails." In general, bind will have wildly different effects in different monads; it's intended as a general way to structure computations, and so needs to be general enough to accommodate all the different types of computations.
 -}
 
+-- TODO: (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
 main :: IO ()
-main = do
-  (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
-  putStrLn (readExpr expr)
+main = getArgs >>= print . eval . readExpr . head -- TODO: Why is head used here?
 
 -- home work exercises 2.1
 -- parseNumber with >>=
