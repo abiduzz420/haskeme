@@ -1,8 +1,7 @@
 import Control.Monad
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
-
-instance Show LispVal where show = showVal
+import Control.Monad.Except
 
 data LispVal
   = Atom String
@@ -12,6 +11,8 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
+
+instance Show LispVal where show = showVal
 
 -- parseString is a parser action
 parseString :: Parser LispVal
@@ -79,25 +80,27 @@ parseExpr =
     return x
 
 -- reading the input string
-readExpr :: String -> LispVal
+readExpr :: String -> ThrowsError LispVal
 readExpr input =
   case parse parseExpr "lisp" input of
-    Left err -> String $ "No match: " ++ show err
-    Right val -> val
+    Left err -> throwError $ Parser err
+    Right val -> return val
 {-
 The notation val@(String _) matches against any LispVal that's a string and then binds val to the whole LispVal, and not just the contents of the String constructor. The result has type LispVal instead of type String.
 -}
-eval :: LispVal -> LispVal
-eval val@(String _) = val
-eval val@(Number _) = val
-eval val@(Bool _) = val
-eval (List (Atom func : args)) = apply func $ map eval args
+eval :: LispVal -> ThrowsError LispVal
+eval val@(String _) = return val
+eval val@(Number _) = return val
+eval val@(Bool _) = return val
+eval (List [Atom "quote", val]) = return val
+eval (List (Atom func : args)) = mapM eval args >>= apply func
+eval badForm = throwError $ BadSpecialForm "(unrecognized special form): " badForm
 
-apply :: String -> [LispVal] -> LispVal
-apply func args = maybe (Bool False) ($ args) $ lookup func primitives
+apply :: String -> [LispVal] -> ThrowsError LispVal
+apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args " func) ($ args) $ lookup func primitives
 
 -- k-v to map scheme functions to haskell arithmetic operations
-primitives :: [(String, [LispVal] -> LispVal)]
+primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [
   ("+", numericBinop (+)),
   ("-", numericBinop (-)),
@@ -107,17 +110,20 @@ primitives = [
   ("remainder", numericBinop rem),
   ("quotient", numericBinop quot)]
 
-numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
-numericBinop op args = Number $ foldl1 op $ map unpackNum args
+-- numeric binary operations function
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
+numericBinop op [] = throwError $ NumArgs 2 []
+numericBinop op single_val@[_] = throwError $ NumArgs 2 single_val
+numericBinop op args = mapM unpackNum args >>= return . Number . foldl1 op
 
-unpackNum :: LispVal -> Integer
-unpackNum (Number n) = n
+unpackNum :: LispVal -> ThrowsError Integer
+unpackNum (Number n) = return n
 unpackNum (String n) = let parsed = reads n :: [(Integer, String)] in
                            if null parsed
-                            then 0
-                            else fst $ parsed !! 0 
+                            then throwError $ TypeMismatch "number" $ String n
+                            else return $ fst $ parsed !! 0 
 unpackNum (List [n]) = unpackNum n
-unpackNum _ = 0
+unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
 -- LispVal printer
 showVal :: LispVal -> String
@@ -139,9 +145,40 @@ unwordsList = unwords . map showVal
     It was used before behind the scenes to combine the lines of a do-block. Here, we use it explicitly to combine our whitespace and symbol parsers. However, bind has completely different semantics in the Parser and IO monads. In the Parser monad, bind means "Attempt to match the first parser, then attempt to match the second with the remaining input, and fail if either fails." In general, bind will have wildly different effects in different monads; it's intended as a general way to structure computations, and so needs to be general enough to accommodate all the different types of computations.
 -}
 
+data LispError = NumArgs Integer [LispVal]
+               | TypeMismatch String LispVal
+               | Parser ParseError
+               | BadSpecialForm String LispVal
+               | NotFunction String String
+               | UnboundVar String String
+               | Default String
+
+showError :: LispError -> String
+showError (NumArgs expected found) = "Expected " ++ show expected
+                                  ++ " args, Found values " ++ unwordsList found
+showError (TypeMismatch expected found) = "Expected " ++ show expected
+                                       ++ " args, found values " ++ show found
+showError (Parser parseErr) = "Parse Error at " ++ show parseErr
+showError (BadSpecialForm message form) = message ++ ": " ++ show form
+showError (NotFunction message func) = message ++ ": " ++ func
+showError (UnboundVar message varname) = message ++ ": " ++ varname
+
+instance Show LispError where show = showError
+
+type ThrowsError = Either LispError
+
+trapError action = catchError action (return . show)
+
+extractValue :: ThrowsError a -> a
+extractValue (Right val) = val
+
 -- TODO: (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
 main :: IO ()
-main = getArgs >>= print . eval . readExpr . head -- TODO: Why is head used here?
+main = do
+     args <- getArgs
+     evaled <- return $ liftM show $ readExpr (args !! 0) >>= eval
+     putStrLn $ extractValue $ trapError evaled
+     -- >>= print . eval . readExpr . head -- TODO: Why is head used here?
 
 -- home work exercises 2.1
 -- parseNumber with >>=
