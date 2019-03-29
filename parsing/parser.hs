@@ -45,10 +45,11 @@ parseNumber :: Parser LispVal
 parseNumber = liftM (Number . read) $ many1 digit
 
 {-
-	 the result of many1 digit is actually a Parser String(i.e m a1), so our combined (Number . read) still can't operate on it. We need a way to tell it to just operate on the value(a1) inside the monad(m), giving us back a Parser LispVal(m r). The standard function liftM does exactly that, so we apply liftM to our (Number . read) function, and then apply the result of that to our parser.
-	 
-   liftM :: Monad m => (a1 -> r) -> m a1 -> m r
+  liftM :: Monad m => (a1 -> r) -> m a1 -> m r
+  
+  the result of many1 digit is actually a Parser String(m a1), so our combined (Number . read) still can't operate on it. We need a way to tell it to just operate on the value(a1) inside the monad(m), giving us back a Parser LispVal(m r). The standard function liftM does exactly that, so we apply liftM to our (Number . read) function, and then apply the result of that to our parser.
 -}
+
 parseList :: Parser LispVal
 parseList = liftM List $ sepBy parseExpr spaces
 
@@ -108,7 +109,42 @@ primitives = [
   ("/", numericBinop div),
   ("mod", numericBinop mod),
   ("remainder", numericBinop rem),
-  ("quotient", numericBinop quot)]
+  ("quotient", numericBinop quot),
+  ("&&", boolBoolBinop (&&)),
+  ("||", boolBoolBinop (||)),
+  ("=", numBoolBinop (==)),
+  ("/=", numBoolBinop (/=)),
+  (">", numBoolBinop (>)),
+  ("<", numBoolBinop (<)),
+  (">=", numBoolBinop (>=)),
+  ("<=", numBoolBinop (<=)),
+  ("string=?", strBoolBinop (==)),
+  ("string>?", strBoolBinop (>)),
+  ("string<?", strBoolBinop (<)),
+  ("string>=?", strBoolBinop (>=)),
+  ("string<=?", strBoolBinop (<=))]
+
+boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBinop unpacker op args = if length args /= 2
+                             then throwError $ NumArgs 2 args
+                             else do
+                              left <- unpacker $ args !! 0
+                              right <- unpacker $ args !! 1
+                              return $ Bool $ left `op` right
+
+boolBoolBinop = boolBinop unpackBool
+numBoolBinop = boolBinop unpackNum
+strBoolBinop = boolBinop unpackStr
+
+unpackBool :: LispVal -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool notBool = throwError $ TypeMismatch "boolean" notBool
+
+unpackStr :: LispVal -> ThrowsError String
+unpackStr (String str) = return str
+unpackStr (Bool bool) = return $ show bool
+unpackStr (Number n) = return $ show n
+unpackStr notString = throwError $ TypeMismatch "string" notString
 
 -- numeric binary operations function
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
@@ -172,11 +208,11 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
--- TODO: (expr:_) <- getArgs -- TODO #1: what does (expr:_) means?
+-- TODO: (expr:_) <- getArgs .. what does (expr:_) means?
 main :: IO ()
 main = do
      args <- getArgs
-     evaled <- return $ liftM show $ readExpr (args !! 0) >>= eval
+     evaled <- return $ liftM show $ readExpr (head args) >>= eval
      putStrLn $ extractValue $ trapError evaled
      -- >>= print . eval . readExpr . head -- TODO: Why is head used here?
 
