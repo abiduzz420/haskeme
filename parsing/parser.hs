@@ -94,6 +94,12 @@ eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
 eval (List [Atom "quote", val]) = return val
+eval (List [Atom "if", pred, conseq, alt]) =
+  do
+    result <- eval pred
+    case result of
+      Bool False -> eval alt
+      otherwise -> eval conseq
 eval (List (Atom func : args)) = mapM eval args >>= apply func
 eval badForm = throwError $ BadSpecialForm "(unrecognized special form): " badForm
 
@@ -122,7 +128,10 @@ primitives = [
   ("string>?", strBoolBinop (>)),
   ("string<?", strBoolBinop (<)),
   ("string>=?", strBoolBinop (>=)),
-  ("string<=?", strBoolBinop (<=))]
+  ("string<=?", strBoolBinop (<=)),
+  ("car", car),
+  ("cdr", cdr),
+  ("cons", cons)]
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -160,6 +169,26 @@ unpackNum (String n) = let parsed = reads n :: [(Integer, String)] in
                             else return $ fst $ parsed !! 0 
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
+
+car :: [LispVal] -> ThrowsError LispVal
+car [List (x:xs)] = return x
+car [DottedList (x:xs) _] = return x
+car [badArg] = throwError $ TypeMismatch "pair" badArg
+car badArgList = throwError $ NumArgs 1 badArgList
+
+cdr :: [LispVal] -> ThrowsError LispVal
+cdr [List (_:xs)] = return $ List xs
+cdr [DottedList [_] x] = return $ x
+cdr [DottedList (_:xs) y] = return $ DottedList xs y
+cdr [badArg] = throwError $ TypeMismatch "pair" badArg
+cdr badArgList = throwError $ NumArgs 1 badArgList
+
+cons :: [LispVal] -> ThrowsError LispVal
+cons [x, (List [])] = return $ List [x]
+cons [x, (List xs)] = return $ List $ x:xs
+cons [x, (DottedList xs y)] = return $ DottedList (x:xs) y
+cons [x1, x2] = return $ DottedList [x1] x2
+cons badArgList = throwError $ NumArgs 2 badArgList
 
 -- LispVal printer
 showVal :: LispVal -> String
