@@ -28,6 +28,7 @@ parseString = do
     
     Each line of a do-block must have the same type, but the result of our String constructor is just a plain old LispVal. return lets us wrap that up in a Parser action that consumes no input but returns it as the inner value. Thus, the whole parseString action will have type Parser LispVal
 -}
+
 parseAtom :: Parser LispVal
 parseAtom = do
   first <- letter <|> symbol
@@ -42,6 +43,7 @@ parseAtom = do
 {-
     Here, we introduce another Parsec combinator, the choice operator <|>. This tries the first parser, then if it fails, tries the second. If either succeeds, then it returns the value returned by that parser. The first parser must fail before it consumes any input
 -}
+
 parseNumber :: Parser LispVal
 parseNumber = liftM (Number . read) $ many1 digit
 
@@ -90,6 +92,7 @@ readExpr input =
 {-
 The notation val@(String _) matches against any LispVal that's a string and then binds val to the whole LispVal, and not just the contents of the String constructor. The result has type LispVal instead of type String.
 -}
+
 eval :: LispVal -> ThrowsError LispVal
 eval val@(String _) = return val
 eval val@(Number _) = return val
@@ -133,7 +136,9 @@ primitives = [
   ("car", car),
   ("cdr", cdr),
   ("cons", cons),
-  ("eqv", eqv)]
+  ("eqv?", eqv),
+  ("eq?", eqv),
+  ("equal?", equal)]
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -196,6 +201,7 @@ eqv :: [LispVal] -> ThrowsError LispVal
 eqv [(Bool arg1), (Bool arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
+eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)] = eqv [List (xs ++ [x]), List (ys ++ [y])]
 eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
                                                  (all eqvPair (zip arg1 arg2))
@@ -205,6 +211,23 @@ eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
                          Right (Bool val) -> val                                            
 eqv [_,_] = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
+
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+
+unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
+unpackEquals arg1 arg2 (AnyUnpacker unpacker) = 
+  do unpackerArg1 <- unpacker arg1
+     unpackerArg2 <- unpacker arg2
+     return $ unpackerArg1 == unpackerArg2
+  `catchError` (const $ return False)
+
+equal :: [LispVal] -> ThrowsError LispVal
+equal [arg1, arg2] = do
+  primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
+                     [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+  eqvEquals <- eqv [arg1, arg2]
+  return $ Bool $ primitiveEquals || let (Bool x) = eqvEquals in x
+equal badArgList = throwError $ NumArgs 2 badArgList
 
 -- LispVal printer
 showVal :: LispVal -> String
