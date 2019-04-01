@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 import Control.Monad
 import System.Environment
+import System.IO
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad.Except
 
@@ -276,12 +277,37 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
+flushStr :: String -> IO()
+flushStr str = putStr str >> hFlush stdout
+
+readPrompt :: String -> IO String
+readPrompt prompt = flushStr prompt >> getLine
+
+evalString :: String -> IO String
+evalString expr = return $ extractValue $ trapError (liftM show $ readExpr expr >>= eval)
+
+evalAndPrint :: String -> IO ()
+evalAndPrint expr = evalString expr >>= putStrLn
+
+-- result captures the input
+until_ :: Monad m => (t -> Bool) -> m t -> (t -> m a) -> m ()
+until_ pred prompt action = do
+  result <- prompt
+  if pred result
+     then return ()
+     else action result >> until_ pred prompt action
+
+runRepl :: IO()
+runRepl = until_ (== "quit") (readPrompt "Lisp>>") evalAndPrint
+
 -- TODO: (expr:_) <- getArgs .. what does (expr:_) means?
 main :: IO ()
 main = do
      args <- getArgs
-     evaled <- return $ liftM show $ readExpr (head args) >>= eval
-     putStrLn $ extractValue $ trapError evaled
+     case length args of
+      0 -> runRepl
+      1 -> evalAndPrint $ args !! 0
+      otherwise -> putStrLn "Program takes 0 or 1 arguments only"
      -- >>= print . eval . readExpr . head -- TODO: Why is head used here?
 
 -- home work exercises 2.1
