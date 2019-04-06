@@ -14,6 +14,9 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
+  | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+  | Func { params :: [String], vaarg :: (Maybe String),
+           body :: [LispVal], closure :: Env }
 
 instance Show LispVal where show = showVal
 
@@ -118,11 +121,39 @@ eval env (List [Atom "set!", Atom var, form]) =
      eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) =
      eval env form >>= defineVar env var
-eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func
+eval env (List (Atom "define" : List (Atom var : params) : body)) =
+     makeNormalFunc env params body >>= defineVar env var
+eval env (List (Atom "define" : DottedList (Atom var : params) vaargs : body)) =
+     makeVarArgs vaargs env params body >>= defineVar env var
+eval env (List (Atom "lambda" : List params : body)) =
+     makeNormalFunc env params body
+eval env (List (Atom "lambda" : DottedList params vaargs : body)) =
+     makeVarArgs vaargs env params body
+eval env (List (Atom "lambda" : vaargs@(Atom _) : body)) =
+     makeVarArgs vaargs env [] body
+eval env (List (func : args)) = do
+     func <- eval env func
+     argVals <- mapM (eval env) args
+     apply func argVals
 eval env badForm = throwError $ BadSpecialForm "(unrecognized special form): " badForm
 
-apply :: String -> [LispVal] -> ThrowsError LispVal
-apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args " func) ($ args) $ lookup func primitives
+apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (PrimitiveFunc func) args = liftThrows $ func args
+apply (Func params vaargs body closure) args = 
+      if num params /= num args && vaargs == Nothing -- ! Try without num just length
+        then throwError $ NumArgs (num params) args
+        else (liftIO $ bindVars closure $ zip params args) >>= bindVarArgs vaargs >>= evalBody
+      where
+        remainingArgs = drop (length params) args
+        num = toInteger . length
+        bindVarArgs args env = case args of
+          Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
+          Nothing -> return env
+        evalBody env = liftM last $ mapM (eval env) body
+
+makeFunc vaargs env params body = return $ Func (map showVal params) vaargs body env
+makeNormalFunc = makeFunc Nothing
+makeVarArgs = makeFunc . Just . showVal
 
 -- # Primitive functions
 
@@ -155,6 +186,12 @@ primitives = [
   ("eqv?", eqv),
   ("eq?", eqv),
   ("equal?", equal)]
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= flip bindVars (map makePrimitiveFunc primitives)
+  where
+    makePrimitiveFunc :: (String, [LispVal] -> ThrowsError LispVal) -> (String, LispVal)
+    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -254,7 +291,13 @@ showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List contents) = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
-
+showVal (PrimitiveFunc _) = "<primitive>"
+showVal (Func {params = args, vaarg = vaargs, body = body, closure = env}) = 
+    "(lambda (" ++ unwords (map show args) ++
+        (case vaargs of
+          Nothing -> ""
+          Just arg -> " . " ++ arg) ++ ") ...)"
+ 
 -- make a string out of LispVal list with spaces
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
@@ -397,10 +440,10 @@ until_ pred prompt action = do
      else action result >> until_ pred prompt action
 
 runRepl :: IO ()
-runRepl = nullEnv >>= until_ (== "quit") (readPrompt "Haskeme>>") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Haskeme>>") . evalAndPrint
 
 runOne :: String -> IO ()
-runOne expr = nullEnv >>= flip evalAndPrint expr
+runOne expr = primitiveBindings >>= flip evalAndPrint expr
 
 -- TODO: (expr:_) <- getArgs .. what does (expr:_) means?
 main :: IO ()
