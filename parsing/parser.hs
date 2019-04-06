@@ -32,7 +32,7 @@ parseString = do
 
 
 -- We're back to using the do-notation instead of the >> operator. This is because we'll be retrieving the value of our parse (returned by many(noneOf "\"")) and manipulating it, 
--- interleaving some other parse operations in the meantime. In general, use >> if the actions don't return a valuquite, >>= if you'll be immediately passing
+-- interleaving some other parse operations in the meantime. In general, use >> if the actions don't return a value, >>= if you'll be immediately passing
 -- that value into the next action, and do-notation
 -- otherwise.
 
@@ -138,7 +138,6 @@ eval env (List (func : args)) = do
 eval env badForm = throwError $ BadSpecialForm "(unrecognized special form): " badForm
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
--- apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args " func) ($ args) $ lookup func primitives
 apply (PrimitiveFunc func) args = liftThrows $ func args
 apply (Func params vaargs body closure) args = 
       if num params /= num args && vaargs == Nothing -- ! Try without num just length
