@@ -17,6 +17,8 @@ data LispVal
   | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
   | Func { params :: [String], vaarg :: (Maybe String),
            body :: [LispVal], closure :: Env }
+  | Port Handle
+  | IOFunc ([LispVal] -> IOThrowsError LispVal)
 
 instance Show LispVal where show = showVal
 
@@ -50,7 +52,6 @@ parseAtom = do
       "#t" -> Bool True
       "#f" -> Bool False
       _ -> Atom atom
-
 
 -- Here, we introduce another Parsec combinator, the choice operator <|>. This tries the first parser, then if it fails, tries the second.
 -- If either succeeds, then it returns the value returned by that parser.
@@ -87,6 +88,7 @@ spaces = skipMany1 space
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
+-- the haskeme parser
 parseExpr :: Parser LispVal
 parseExpr =
   parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
@@ -95,22 +97,30 @@ parseExpr =
     char ')'
     return x
 
--- reading the input string
+readOrThrows :: Parser a -> String -> ThrowsError a
+readOrThrows parser input = case parse parser "lisp" input of
+  Left err -> throwError $ Parser err
+  Right val -> return val
+
+-- reading the input string from repl
 readExpr :: String -> ThrowsError LispVal
-readExpr input =
-  case parse parseExpr "lisp" input of
-    Left err -> throwError $ Parser err
-    Right val -> return val
+readExpr = readOrThrows parseExpr
+-- reading input from a file
+readExprList :: String -> ThrowsError [LispVal]
+readExprList = readOrThrows (endBy parseExpr spaces)
+-- ^ (endBy parseExpr spaces) returns Parser [LispVal]
 
 -- The notation val@(String _) matches against any LispVal that's a string and then binds val to the whole LispVal,
 -- and not just the contents of the String constructor. The result has type LispVal instead of type String.
-
 eval :: Env -> LispVal -> IOThrowsError LispVal
 eval env val@(String _) = return val
 eval env val@(Number _) = return val
 eval env val@(Bool _) = return val
 eval env (Atom id) = getVar env id
 eval env (List [Atom "quote", val]) = return val
+eval env (List [Atom "load", String filename]) =
+  load filename >>= liftM last . mapM (eval env)
+-- ^ we are using mapM instead of map is because eval returns a monad and not just value
 eval env (List [Atom "if", pred, conseq, alt]) =
   do
     result <- eval env pred
@@ -119,9 +129,9 @@ eval env (List [Atom "if", pred, conseq, alt]) =
       otherwise -> eval env conseq
 eval env (List [Atom "set!", Atom var, form]) =
      eval env form >>= setVar env var
-eval env (List [Atom "define", Atom var, form]) =
+eval env (List [Atom "define", Atom var, form]) = -- "(define x 2)"
      eval env form >>= defineVar env var
-eval env (List (Atom "define" : List (Atom var : params) : body)) =
+eval env (List (Atom "define" : List (Atom var : params) : body)) = -- "(define (addThese x y) (+ x y))"
      makeNormalFunc env params body >>= defineVar env var
 eval env (List (Atom "define" : DottedList (Atom var : params) vaargs : body)) =
      makeVarArgs vaargs env params body >>= defineVar env var
@@ -138,6 +148,7 @@ eval env (List (func : args)) = do
 eval env badForm = throwError $ BadSpecialForm "(unrecognized special form): " badForm
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (IOFunc func) args = func args
 apply (PrimitiveFunc func) args = liftThrows $ func args
 apply (Func params vaargs body closure) args = 
       if num params /= num args && vaargs == Nothing -- ! Try without num just length
@@ -150,6 +161,7 @@ apply (Func params vaargs body closure) args =
           Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
           Nothing -> return env
         evalBody env = liftM last $ mapM (eval env) body
+apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
 
 makeFunc vaargs env params body = return $ Func (map showVal params) vaargs body env
 makeNormalFunc = makeFunc Nothing
@@ -188,10 +200,13 @@ primitives = [
   ("equal?", equal)]
 
 primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= flip bindVars (map makePrimitiveFunc primitives)
+primitiveBindings = nullEnv >>= (flip bindVars $ (map makePrimitiveFunc primitives) ++ (map makeIOFunc ioPrimitives))
   where
+    makeFunc constructor (var, func) = (var, constructor func)
     makePrimitiveFunc :: (String, [LispVal] -> ThrowsError LispVal) -> (String, LispVal)
-    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
+    makePrimitiveFunc = makeFunc PrimitiveFunc
+    makeIOFunc :: (String, [LispVal] -> IOThrowsError LispVal) -> (String, LispVal)
+    makeIOFunc = makeFunc IOFunc
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -282,6 +297,47 @@ equal [arg1, arg2] = do
   return $ Bool $ primitiveEquals || let (Bool x) = eqvEquals in x
 equal badArgList = throwError $ NumArgs 2 badArgList
 
+-- io primitives reacting to outside world
+
+ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+ioPrimitives = [("apply", applyProc),
+                ("open-input-file", makePort ReadMode),
+                ("open-output-file", makePort WriteMode),
+                ("close-input-port", closePort),
+                ("close-output-port", closePort),
+                ("read", readProc),
+                ("write", writeProc),
+                ("read-contents", readContents),
+                ("read-all", readAll)]
+
+applyProc :: [LispVal] -> IOThrowsError LispVal
+applyProc [func, List args] = apply func args
+applyProc (func : args) = apply func args
+
+makePort :: IOMode -> ([LispVal] -> IOThrowsError LispVal)
+makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
+
+closePort :: [LispVal] -> IOThrowsError LispVal
+closePort [Port port] = liftIO (hClose port) >> (return $ Bool True)
+
+readProc :: [LispVal] -> IOThrowsError LispVal
+readProc [] = readProc [Port stdin]
+readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
+
+writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc [obj] = writeProc [obj, Port stdout]
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+
+readContents :: [LispVal] -> IOThrowsError LispVal
+readContents [String filename] = liftM String $ liftIO $ readFile filename
+
+-- read a full file of statements. Not to confuse with `load` which evaluates values as Scheme exprs
+load :: String -> IOThrowsError [LispVal]
+load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
+
+readAll :: [LispVal] -> IOThrowsError LispVal
+readAll [String filename] = liftM List $ load filename
+
 -- LispVal printer
 showVal :: LispVal -> String
 showVal (Atom name) = name
@@ -292,12 +348,14 @@ showVal (Bool False) = "#f"
 showVal (List contents) = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
 showVal (PrimitiveFunc _) = "<primitive>"
+showVal (IOFunc _) = "<IO primitive>"
+showVal (Port _) = "<IO Port>"
 showVal (Func {params = args, vaarg = vaargs, body = body, closure = env}) = 
     "(lambda (" ++ unwords (map show args) ++
         (case vaargs of
           Nothing -> ""
           Just arg -> " . " ++ arg) ++ ") ...)"
- 
+
 -- make a string out of LispVal list with spaces
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
@@ -315,7 +373,7 @@ data LispError = NumArgs Integer [LispVal]
                | TypeMismatch String LispVal
                | Parser ParseError
                | BadSpecialForm String LispVal
-               | NotFunction String String
+               | NotFunction String LispVal
                | UnboundVar String String
                | Default String
 
@@ -326,7 +384,7 @@ showError (TypeMismatch expected found) = "Expected " ++ show expected
                                        ++ " args, found values " ++ show found
 showError (Parser parseErr) = "Parse Error at " ++ show parseErr
 showError (BadSpecialForm message form) = message ++ ": " ++ show form
-showError (NotFunction message func) = message ++ ": " ++ func
+showError (NotFunction message func) = message ++ ": " ++ show func
 showError (UnboundVar message varname) = message ++ ": " ++ varname
 
 instance Show LispError where show = showError
@@ -435,33 +493,24 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
 until_ :: Monad m => (t -> Bool) -> m t -> (t -> m a) -> m ()
 until_ pred prompt action = do
   result <- prompt
-  if pred result
+  if pred resultliftM
      then return ()
      else action result >> until_ pred prompt action
 
 runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Haskeme>>") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "λ> ") . evalAndPrint
 
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne args = do
+     env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
+     (runIOThrows $ liftM show $ eval env (List [Atom "load", String $ args !! 0]))
+         >>= hPutStrLn stderr
+-- ^ args !! 0 is the filename (first argument)
+-- ? I am not sure why rest of the argument list is taken into "args"
 
--- TODO: (expr:_) <- getArgs .. what does (expr:_) means?
 main :: IO ()
 main = do
      args <- getArgs
-     case length args of
-      0 -> runRepl
-      1 -> runOne $ args !! 0
-      otherwise -> putStrLn "Program takes 0 or 1 arguments only"
-     -- >>= print . eval . readExpr . head -- TODO: Why is head used here?
-
--- home work exercises 2.1
--- parseNumber with >>=
-parseNumber' :: Parser LispVal
-parseNumber' = many1 digit >>= return . Number . read
-
--- parseNumber with do-notation
-parseNumber'' :: Parser LispVal
-parseNumber'' = do
-  parseStr <- many1 digit
-  return . Number . read $ parseStr
+     if null args
+      then runRepl
+      else runOne $ args
