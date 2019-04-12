@@ -493,7 +493,7 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
 until_ :: Monad m => (t -> Bool) -> m t -> (t -> m a) -> m ()
 until_ pred prompt action = do
   result <- prompt
-  if pred resultliftM
+  if pred result
      then return ()
      else action result >> until_ pred prompt action
 
