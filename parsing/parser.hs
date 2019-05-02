@@ -120,7 +120,10 @@ eval env (Atom id) = getVar env id
 eval env (List [Atom "quote", val]) = return val
 eval env (List [Atom "load", String filename]) =
   load filename >>= liftM last . mapM (eval env)
--- ^ we are using mapM instead of map is because eval returns a monad and not just value
+-- ^ we are using mapM instead of map is because eval returns a monad values and not just normal values
+-- Refer the function argument signature below:
+-- ^ mapM :: (a -> m b) -> t a -> m (t b)
+-- ^ map :: (a -> b) -> [a] -> [b]
 eval env (List [Atom "if", pred, conseq, alt]) =
   do
     result <- eval env pred
