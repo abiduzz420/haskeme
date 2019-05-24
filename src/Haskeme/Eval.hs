@@ -54,7 +54,7 @@ apply (PrimitiveFunc func) args = liftThrows $ func args
 apply (Func params vaargs body closure) args = 
       if num params /= num args && vaargs == Nothing -- ! Try without num just length
         then throwError $ NumArgs (num params) args
-        else (liftIO $ bindVars closure $ zip params args) >>= bindVarArgs vaargs >>= evalBody
+        else liftIO (bindVars closure $ zip params args) >>= bindVarArgs vaargs >>= evalBody
       where
         remainingArgs = drop (length params) args
         num = toInteger . length
@@ -76,4 +76,4 @@ evalAndPrint env expr = evalString env expr >>= putStrLn
 
 -- read a full file of statements. Not to confuse with `load` which evaluates values as Scheme exprs
 load :: String -> IOThrowsError [LispVal]
-load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
+load filename = liftIO (readFile filename) >>= liftThrows . readExprList

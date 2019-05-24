@@ -54,7 +54,7 @@ boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> Thro
 boolBinop unpacker op args = if length args /= 2
                              then throwError $ NumArgs 2 args
                              else do
-                              left <- unpacker $ args !! 0
+                              left <- unpacker $ head args
                               right <- unpacker $ args !! 1
                               return $ Bool $ left `op` right
 
@@ -83,7 +83,7 @@ unpackNum (Number n) = return n
 unpackNum (String n) = let parsed = reads n :: [(Integer, String)] in
                            if null parsed
                             then throwError $ TypeMismatch "number" $ String n
-                            else return $ fst $ parsed !! 0 
+                            else return $ fst $ head parsed
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
@@ -95,26 +95,26 @@ car badArgList = throwError $ NumArgs 1 badArgList
 
 cdr :: [LispVal] -> ThrowsError LispVal
 cdr [List (_:xs)] = return $ List xs
-cdr [DottedList [_] x] = return $ x
+cdr [DottedList [_] x] = return x
 cdr [DottedList (_:xs) y] = return $ DottedList xs y
 cdr [badArg] = throwError $ TypeMismatch "pair" badArg
 cdr badArgList = throwError $ NumArgs 1 badArgList
 
 cons :: [LispVal] -> ThrowsError LispVal
-cons [x, (List [])] = return $ List [x]
-cons [x, (List xs)] = return $ List $ x:xs
-cons [x, (DottedList xs y)] = return $ DottedList (x:xs) y
+cons [x, List []] = return $ List [x]
+cons [x, List xs] = return $ List $ x:xs
+cons [x, DottedList xs y] = return $ DottedList (x:xs) y
 cons [x1, x2] = return $ DottedList [x1] x2
 cons badArgList = throwError $ NumArgs 2 badArgList
 
 eqv :: [LispVal] -> ThrowsError LispVal
-eqv [(Bool arg1), (Bool arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
-eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
-eqv [(DottedList xs x), (DottedList ys y)] = eqv [List (xs ++ [x]), List (ys ++ [y])]
-eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
-                                                 (all eqvPair (zip arg1 arg2))
+eqv [Bool arg1, Bool arg2] = return $ Bool $ arg1 == arg2
+eqv [Number arg1, Number arg2] = return $ Bool $ arg1 == arg2
+eqv [String arg1, String arg2] = return $ Bool $ arg1 == arg2
+eqv [Atom arg1, Atom arg2] = return $ Bool $ arg1 == arg2
+eqv [DottedList xs x, DottedList ys y] = eqv [List (xs ++ [x]), List (ys ++ [y])]
+eqv [List arg1, List arg2] = return $ Bool $ length arg1 == length arg2 &&
+                                                 all eqvPair (zip arg1 arg2)
     where
       eqvPair (x, y) = case eqv [x,y] of
                          Left err -> False
@@ -129,7 +129,7 @@ unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
   do unpackerArg1 <- unpacker arg1
      unpackerArg2 <- unpacker arg2
      return $ unpackerArg1 == unpackerArg2
-  `catchError` (const $ return False)
+  `catchError` const (return False)
 
 equal :: [LispVal] -> ThrowsError LispVal
 equal [arg1, arg2] = do
@@ -160,7 +160,7 @@ makePort :: IOMode -> ([LispVal] -> IOThrowsError LispVal)
 makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
 
 closePort :: [LispVal] -> IOThrowsError LispVal
-closePort [Port port] = liftIO (hClose port) >> (return $ Bool True)
+closePort [Port port] = liftIO (hClose port) >> return (Bool True)
 
 readProc :: [LispVal] -> IOThrowsError LispVal
 readProc [] = readProc [Port stdin]
@@ -168,7 +168,7 @@ readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
 
 writeProc :: [LispVal] -> IOThrowsError LispVal
 writeProc [obj] = writeProc [obj, Port stdout]
-writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
 
 readContents :: [LispVal] -> IOThrowsError LispVal
 readContents [String filename] = liftM String $ liftIO $ readFile filename

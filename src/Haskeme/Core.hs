@@ -14,7 +14,7 @@ data LispVal
     | String String
     | Bool Bool
     | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
-    | Func { params :: [String], vaarg :: (Maybe String),
+    | Func { params :: [String], vaarg :: Maybe String,
              body :: [LispVal], closure :: Env }
     | Port Handle
     | IOFunc ([LispVal] -> IOThrowsError LispVal)
@@ -33,7 +33,7 @@ showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last +
 showVal (PrimitiveFunc _) = "<primitive>"
 showVal (IOFunc _) = "<IO primitive>"
 showVal (Port _) = "<IO Port>"
-showVal (Func {params = args, vaarg = vaargs, body = body, closure = env}) = 
+showVal Func {params = args, vaarg = vaargs, body = body, closure = env} = 
     "(lambda (" ++ unwords (map show args) ++
         (case vaargs of
           Nothing -> ""

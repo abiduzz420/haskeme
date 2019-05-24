@@ -26,7 +26,7 @@ getVar envRef var = do env <- liftIO $ readIORef envRef -- returns a list (I gue
 setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
 setVar envRef var value = do env <- liftIO $ readIORef envRef
                              maybe (throwError $ UnboundVar "Getting an unbounded var" var)
-                                   (liftIO . (flip writeIORef value)) -- ? where is this value returned or how is it used
+                                   (liftIO . flip writeIORef value) -- ? where is this value returned or how is it used
                                    (lookup var env)
                              return value
 

@@ -17,7 +17,7 @@ runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "λ> ") . evalAnd
 runOne :: [String] -> IO ()
 runOne args = do
         env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
-        (runIOThrows $ liftM show $ eval env (List [Atom "load", String $ args !! 0]))
+        runIOThrows (liftM show $ eval env (List [Atom "load", String $ head args]))
             >>= hPutStrLn stderr
 -- ^ args !! 0 is the filename (first argument)
 -- ? I am not sure why rest of the argument list is taken into "args"
