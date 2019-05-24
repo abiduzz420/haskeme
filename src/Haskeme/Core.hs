@@ -1,9 +1,9 @@
 module Haskeme.Core where
 
-import Control.Monad.Except
-import Data.IORef
-import System.IO
-import Text.ParserCombinators.Parsec
+import           Control.Monad.Except
+import           Data.IORef
+import           System.IO
+import           Text.ParserCombinators.Parsec
 
 data LispVal
     = Atom String
@@ -18,26 +18,31 @@ data LispVal
              body :: [LispVal], closure :: Env }
     | Port Handle
     | IOFunc ([LispVal] -> IOThrowsError LispVal)
-  
-instance Show LispVal where show = showVal
-  
+
+instance Show LispVal where
+    show = showVal
+
 -- LispVal printer
 showVal :: LispVal -> String
-showVal (Atom name) = name
-showVal (Number number) = show number
+showVal (Atom   name    ) = name
+showVal (Number number  ) = show number
 showVal (String contents) = "\"" ++ contents ++ "\""
-showVal (Bool True) = "#t"
-showVal (Bool False) = "#f"
-showVal (List contents) = "(" ++ unwordsList contents ++ ")"
-showVal (DottedList init last) = "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
+showVal (Bool   True    ) = "#t"
+showVal (Bool   False   ) = "#f"
+showVal (List   contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList init last) =
+    "(" ++ unwordsList init ++ " . " ++ show last ++ ")"
 showVal (PrimitiveFunc _) = "<primitive>"
-showVal (IOFunc _) = "<IO primitive>"
-showVal (Port _) = "<IO Port>"
-showVal Func {params = args, vaarg = vaargs, body = body, closure = env} = 
-    "(lambda (" ++ unwords (map show args) ++
-        (case vaargs of
-          Nothing -> ""
-          Just arg -> " . " ++ arg) ++ ") ...)"
+showVal (IOFunc        _) = "<IO primitive>"
+showVal (Port          _) = "<IO Port>"
+showVal Func { params = args, vaarg = vaargs, body = body, closure = env } =
+    "(lambda ("
+        ++ unwords (map show args)
+        ++ (case vaargs of
+               Nothing  -> ""
+               Just arg -> " . " ++ arg
+           )
+        ++ ") ...)"
 
 -- make a string out of LispVal list with spaces
 unwordsList :: [LispVal] -> String
@@ -58,17 +63,18 @@ data LispError = NumArgs Integer [LispVal]
                | UnboundVar String String
                | Default String
 
-instance Show LispError where show = showError
+instance Show LispError where
+    show = showError
 
 showError :: LispError -> String
-showError (NumArgs expected found) = "Expected " ++ show expected
-                                  ++ " args, Found values " ++ unwordsList found
-showError (TypeMismatch expected found) = "Expected " ++ show expected
-                                       ++ " args, found values " ++ show found
-showError (Parser parseErr) = "Parse Error at " ++ show parseErr
-showError (BadSpecialForm message form) = message ++ ": " ++ show form
-showError (NotFunction message func) = message ++ ": " ++ show func
-showError (UnboundVar message varname) = message ++ ": " ++ varname
+showError (NumArgs expected found) =
+    "Expected " ++ show expected ++ " args, Found values " ++ unwordsList found
+showError (TypeMismatch expected found) =
+    "Expected " ++ show expected ++ " args, found values " ++ show found
+showError (Parser parseErr               ) = "Parse Error at " ++ show parseErr
+showError (BadSpecialForm message form   ) = message ++ ": " ++ show form
+showError (NotFunction    message func   ) = message ++ ": " ++ show func
+showError (UnboundVar     message varname) = message ++ ": " ++ varname
 
 type ThrowsError = Either LispError
 
@@ -88,7 +94,7 @@ type IOThrowsError = ExceptT LispError IO
 -- so throwError and return (members of MonadError and Monad, respectively) take on their 
 -- IOThrowsError definitions
 liftThrows :: ThrowsError a -> IOThrowsError a
-liftThrows (Left err) = throwError err
+liftThrows (Left  err) = throwError err
 liftThrows (Right val) = return val
 
 -- runs IOThrowsError action and returns IO monad

@@ -1,11 +1,16 @@
-module Haskeme.Parser (readExpr, readExprList) where
+module Haskeme.Parser
+  ( readExpr
+  , readExprList
+  )
+where
 
-import Control.Monad
-import Control.Monad.Except
-import Prelude
-import Text.ParserCombinators.Parsec hiding (spaces)
-
-import Haskeme.Core
+import           Control.Monad
+import           Control.Monad.Except
+import           Prelude
+import           Text.ParserCombinators.Parsec
+                                         hiding ( spaces )
+                                         
+import           Haskeme.Core
 
 -- # Parsing
 
@@ -29,13 +34,12 @@ parseString = do
 parseAtom :: Parser LispVal
 parseAtom = do
   first <- letter <|> symbol
-  rest <- many (letter <|> symbol <|> digit)
+  rest  <- many (letter <|> symbol <|> digit)
   let atom = first : rest
-  return $
-    case atom of
-      "#t" -> Bool True
-      "#f" -> Bool False
-      _ -> Atom atom
+  return $ case atom of
+    "#t" -> Bool True
+    "#f" -> Bool False
+    _    -> Atom atom
 
 -- Here, we introduce another Parsec combinator, the choice operator <|>. This tries the first parser, then if it fails, tries the second.
 -- If either succeeds, then it returns the value returned by that parser.
@@ -45,7 +49,7 @@ parseNumber :: Parser LispVal
 parseNumber = liftM (Number . read) $ many1 digit
 
 -- liftM :: Monad m => (a1 -> r) -> m a1 -> m r
-  
+
 -- the result of many1 digit is actually a Parser String(m a1), so our combined (Number . read) still can't operate on it.
 -- We need a way to tell it to just operate on the value(a1) inside the monad(m), giving us back a Parser LispVal(m r).
 -- The standard function liftM does exactly that, so we apply liftM to our (Number . read) function, and then apply the result of that to our parser.
@@ -74,16 +78,15 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 -- the haskeme parser
 parseExpr :: Parser LispVal
-parseExpr =
-  parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
-    char '('
-    x <- try parseList <|> parseDottedList
-    char ')'
-    return x
+parseExpr = parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
+  char '('
+  x <- try parseList <|> parseDottedList
+  char ')'
+  return x
 
 readOrThrows :: Parser a -> String -> ThrowsError a
 readOrThrows parser input = case parse parser "lisp" input of
-  Left err -> throwError $ Parser err
+  Left  err -> throwError $ Parser err
   Right val -> return val
 
 -- reading the input string from repl
