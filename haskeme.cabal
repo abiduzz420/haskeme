@@ -54,8 +54,6 @@ executable haskeme
 test-suite haskeme-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
-  other-modules:
-      Paths_haskeme
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
