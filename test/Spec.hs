@@ -79,7 +79,7 @@ stringT = testCase "comparing strings" $ do
     printVal (strBoolBinop (==) [String "lisp", String "lisp"]) @?= "#t"
     printVal (strBoolBinop (<=) [String "hello", String "world"]) @?= "#t"
 
--- TODO: equal? primitive tests not added because it does meet the scheme specifications
+-- TODO: equal? primitive tests not added because it does not meet the scheme specifications
 -- (equal? 3 "3") => (expected: #f) but haskeme outputs #t due to usage of unpacker
 
 eqvT :: TestTree
