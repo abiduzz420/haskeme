@@ -1,8 +1,4 @@
-module Haskeme.Parser
-  ( readExpr
-  , readExprList
-  )
-where
+module Haskeme.Parser where
 
 import           Control.Monad
 import           Control.Monad.Except
@@ -79,9 +75,9 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 -- the haskeme parser
 parseExpr :: Parser LispVal
 parseExpr = parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
-  char '('
+  spaces >> char '(' >> spaces
   x <- try parseList <|> parseDottedList
-  char ')'
+  spaces >> char ')' >> spaces
   return x
 
 readOrThrows :: Parser a -> String -> ThrowsError a
