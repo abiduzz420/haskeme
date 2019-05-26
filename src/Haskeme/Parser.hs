@@ -4,8 +4,7 @@ import           Control.Monad
 import           Control.Monad.Except
 import           Prelude
 import           Text.ParserCombinators.Parsec
-                                         hiding ( spaces )
-                                         
+
 import           Haskeme.Core
 
 -- # Parsing
@@ -51,7 +50,7 @@ parseNumber = liftM (Number . read) $ many1 digit
 -- The standard function liftM does exactly that, so we apply liftM to our (Number . read) function, and then apply the result of that to our parser.
 
 parseList :: Parser LispVal
-parseList = liftM List $ sepBy parseExpr spaces
+parseList = liftM List $ sepBy parseExpr spaces'
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
@@ -66,19 +65,26 @@ parseQuoted = do
   x <- parseExpr
   return $ List [Atom "quote", x]
 
-spaces :: Parser ()
-spaces = skipMany1 space
+-- Different from Text.ParserCombinators.Parsec.spaces
+spaces' :: Parser ()
+spaces' = skipMany1 space
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 -- the haskeme parser
+-- TODO: cannot parse "(define x 2   )"
 parseExpr :: Parser LispVal
-parseExpr = parseAtom <|> parseString <|> parseNumber <|> parseQuoted <|> do
-  spaces >> char '(' >> spaces
-  x <- try parseList <|> parseDottedList
-  spaces >> char ')' >> spaces
-  return x
+parseExpr = 
+      parseAtom 
+  <|> parseString 
+  <|> parseNumber 
+  <|> parseQuoted 
+  <|> do
+    spaces >> char '(' >> spaces
+    x <- try parseList <|> parseDottedList
+    spaces >> char ')' >> spaces
+    return x
 
 readOrThrows :: Parser a -> String -> ThrowsError a
 readOrThrows parser input = case parse parser "lisp" input of
@@ -90,5 +96,5 @@ readExpr :: String -> ThrowsError LispVal
 readExpr = readOrThrows parseExpr
 -- reading input from a file
 readExprList :: String -> ThrowsError [LispVal]
-readExprList = readOrThrows (endBy parseExpr spaces)
--- ^ (endBy parseExpr spaces) returns Parser [LispVal]
+readExprList = readOrThrows (endBy parseExpr spaces')
+-- ^ (endBy parseExpr spaces') returns Parser [LispVal]
