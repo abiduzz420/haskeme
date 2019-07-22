@@ -21,6 +21,14 @@ $ stack build --test
 $ stack install
 $ haskeme
 ```
+
+### Installing via Docker
+
+```
+$ docker pull lambdastyle/haskeme
+$ docker run -it lambdastyle/haskeme
+```
+
 ### Demo
 
 ```
