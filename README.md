@@ -59,6 +59,7 @@ $ haskeme
 2
 λ> (cdr morePrimes)
 (3 5 7 11)
+λ> quit
 ```
 ### References
 
