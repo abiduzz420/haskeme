@@ -3,7 +3,7 @@ module Haskeme.Parser where
 import           Control.Monad
 import           Control.Monad.Except
 import           Prelude
-import           Text.ParserCombinators.Parsec
+import           Text.ParserCombinators.Parsec hiding (spaces)
 
 import           Haskeme.Core
 
@@ -50,7 +50,7 @@ parseNumber = liftM (Number . read) $ many1 digit
 -- The standard function liftM does exactly that, so we apply liftM to our (Number . read) function, and then apply the result of that to our parser.
 
 parseList :: Parser LispVal
-parseList = liftM List $ sepBy parseExpr spaces'
+parseList = liftM List $ sepBy parseExpr spaces
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
@@ -66,8 +66,8 @@ parseQuoted = do
   return $ List [Atom "quote", x]
 
 -- Different from Text.ParserCombinators.Parsec.spaces
-spaces' :: Parser ()
-spaces' = skipMany1 space
+spaces :: Parser ()
+spaces = skipMany1 space
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
@@ -80,10 +80,10 @@ parseExpr =
   <|> parseString 
   <|> parseNumber 
   <|> parseQuoted 
-  <|> do
-    spaces >> char '(' >> spaces
+  <|> do 
+    char '('
     x <- try parseList <|> parseDottedList
-    spaces >> char ')' >> spaces
+    char ')'
     return x
 
 readOrThrows :: Parser a -> String -> ThrowsError a
@@ -96,5 +96,5 @@ readExpr :: String -> ThrowsError LispVal
 readExpr = readOrThrows parseExpr
 -- reading input from a file
 readExprList :: String -> ThrowsError [LispVal]
-readExprList = readOrThrows (endBy parseExpr spaces')
--- ^ (endBy parseExpr spaces') returns Parser [LispVal]
+readExprList = readOrThrows (endBy parseExpr spaces)
+-- ^ (endBy parseExpr spaces) returns Parser [LispVal]
