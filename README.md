@@ -13,9 +13,10 @@ A Scheme interpreter written in Haskell
 
 ### Running locally
 
-Make sure you have stack tool installed or you could go here to install: [Haskell Tool Stack](https://docs.haskellstack.org/en/stable/README/)
+Please make sure you have installed [Haskell Tool Stack](https://docs.haskellstack.org/en/stable/README/)
 
 ```
+$ curl -sSL https://get.haskellstack.org/ | sh
 $ git clone https://github.com/abiduzz420/haskeme.git && cd haskeme
 $ stack build --test
 $ stack install
