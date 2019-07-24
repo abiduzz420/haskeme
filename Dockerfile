@@ -1,4 +1,6 @@
-# Base (TODO: need to find a slimmer alternative as the base, probably alpine or debian:sid. This can significantly reduce the size of image)
+# Base image 
+# (TODO: need to find a slimmer alternative as the base, probably alpine or debian:sid.
+#        This can significantly reduce the size of image)
 FROM ubuntu:18.04
 
 # Configuring locales
